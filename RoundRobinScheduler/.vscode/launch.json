@@ -6,7 +6,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
-            "args": ["1000", "arg2", "arg3", "a", "a", "a", "a", "a", "a", "a", "a", ":", "a", "a", "a", "a", "a"],  // Add your arguments here
+            "args": ["1000", "arg2", "arg3", "a", "a", "a", "a", "a", "a", "a", "a", "a", ":", "a", "a", "a", "a", "a"],  // Add your arguments here
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
