@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include "schedule.h"
 
 
@@ -53,10 +55,12 @@ int populateArr(char * arr[], int argc, char * argv[]){
     return programCount;
 }
 
-void executeRoundRobin(char *programs[], int programNum){
+void executeRoundRobin(char *programs[], int programNum, char * argv[]){
     pid_t processIDs[programNum];
-
+    int ms = strtol(argv[1], NULL, 10);
     char * programArgs[MAX_ARGUMENTS + 2] = {NULL};  // +2 for executable and NULL
+
+    int status;
 
     for(int i = 0; i < programNum; i++){
         if ((processIDs[i] = fork()) < 0){
@@ -64,15 +68,41 @@ void executeRoundRobin(char *programs[], int programNum){
             abort();
         }
         else if (processIDs[i] == 0){
-            char * cmdLine = programs[i];
-            parseArgs(cmdLine, programArgs);
-            pause();
-            execv(programArgs[0], programArgs);
+            //char * cmdLine = programs[i];
+            //parseArgs(cmdLine, programArgs);
+            //pause();
+            // execv(programArgs[0], programArgs);
             exit(0);
         }
 
+        printf("Child PID: %d\n", processIDs[i]);
     }
 
+
+    while (programNum > 0){
+        pid_t pid = waitpid(-1, &status, WUNTRACED | WNOHANG);
+
+        
+        if(WIFEXITED(status) && pid > 0){
+            removePID(programNum, processIDs, pid);
+            printf("Waited for child: %d\n", pid);
+            programNum--;
+        }
+    }
+}
+
+void removePID(int programNum, pid_t * PIDArr, pid_t rm){
+
+    int idx = 0;
+
+    while(PIDArr[idx] != rm){
+        idx++;
+    }
+
+    while( (idx + 1) < programNum){
+        PIDArr[idx] = PIDArr[idx + 1];
+        idx++;
+    }
 }
 
 void parseArgs(char * programs, char *programArgs[] ){
@@ -89,11 +119,10 @@ void parseArgs(char * programs, char *programArgs[] ){
 }
 
 void roundRobinScheduler(int argc, char *argv[]){
-    char *arr[] = {NULL};
     char *programs[MaxProcesses];
     int processes = populateArr(programs, argc, argv);
-    char * cmdLine = programs[0];
-    parseArgs(cmdLine, arr);
+    executeRoundRobin(programs, processes, argv);
+
 }
 
 /* The validateCmdLine function parses the command line arguments and assesses whether

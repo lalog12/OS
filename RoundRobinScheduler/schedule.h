@@ -10,7 +10,8 @@ int MaxArguments = MAX_ARGUMENTS;
 void validateCmdLine(int argc, char *argv[]);
 int populateArr(char * arr[], int argc, char * argv[]);
 void roundRobinScheduler(int argc, char *argv[]);
-void executeRoundRobin(char *programs[], int programNum);
+void executeRoundRobin(char *programs[], int programNum, char *argv[]);
 void parseArgs(char * programs, char *programArgs[] );
+void removePID(int programNum, pid_t * PIDArr, pid_t rm);
 
 #endif
