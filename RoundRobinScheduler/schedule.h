@@ -13,5 +13,8 @@ void roundRobinScheduler(int argc, char *argv[]);
 void executeRoundRobin(char *programs[], int programNum, char *argv[]);
 void parseArgs(char * programs, char *programArgs[] );
 void removePID(int programNum, pid_t * PIDArr, pid_t rm);
+void timer_handler(int signum);
+void freeArgs(char **args);
+
 
 #endif

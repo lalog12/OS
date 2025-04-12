@@ -7,8 +7,14 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 #include "schedule.h"
 
+
+pid_t processIDs[MAX_PROCESSES]; // pid array
+int processSize;
+int idx;
+pid_t currentProcess;
 
 int main(int argc, char * argv[]){
     validateCmdLine(argc, argv);
@@ -55,12 +61,36 @@ int populateArr(char * arr[], int argc, char * argv[]){
     return programCount;
 }
 
-void executeRoundRobin(char *programs[], int programNum, char * argv[]){
-    pid_t processIDs[programNum];
-    int ms = strtol(argv[1], NULL, 10);
-    char * programArgs[MAX_ARGUMENTS + 2] = {NULL};  // +2 for executable and NULL
+void timer_handler(int signum){
+    
+    if(processSize <= 0) return;
+    kill(processIDs[idx], SIGSTOP);
+    
+    idx = (idx + 1) % processSize;
 
+    kill(processIDs[idx], SIGCONT);
+
+}
+
+void cont_handler(int signum){
+    
+}
+
+void executeRoundRobin(char *programs[], int programNum, char * argv[]){
+    signal(SIGALRM, timer_handler);
+    idx = 0;
+    int ms = strtol(argv[1], NULL, 10); // quantum
+    char * programArgs[MAX_ARGUMENTS + 2] = {NULL};  // +2 for executable and NULL
+    // wait
     int status;
+
+    struct itimerval timer;
+    timer.it_value.tv_sec = 0;
+    timer.it_value.tv_usec = 1000 * ms;
+    timer.it_interval.tv_sec = 0;
+    timer.it_interval.tv_usec = 1000 * ms;
+
+    processSize = programNum;
 
     for(int i = 0; i < programNum; i++){
         if ((processIDs[i] = fork()) < 0){
@@ -68,25 +98,42 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
             abort();
         }
         else if (processIDs[i] == 0){
-            //char * cmdLine = programs[i];
-            //parseArgs(cmdLine, programArgs);
-            //pause();
-            // execv(programArgs[0], programArgs);
-            exit(0);
+            signal(SIGCONT, cont_handler);  
+            char * cmdLine = programs[i];
+            parseArgs(cmdLine, programArgs);
+            pause();
+            execv(programArgs[0], programArgs);
+            freeArgs(programArgs);
+            exit(1);
         }
 
-        printf("Child PID: %d\n", processIDs[i]);
+        //printf("Child PID: %d\n", processIDs[i]);
     }
 
 
+    setitimer(ITIMER_REAL, &timer, NULL);
+
+    kill(processIDs[idx], SIGCONT);
     while (programNum > 0){
         pid_t pid = waitpid(-1, &status, WUNTRACED | WNOHANG);
-
         
         if(WIFEXITED(status) && pid > 0){
+            // Check if this was the current process BEFORE removing it
+            int was_current = (pid == processIDs[idx]);
+            
             removePID(programNum, processIDs, pid);
-            printf("Waited for child: %d\n", pid);
+            // printf("Waited for child: %d\n", pid);
             programNum--;
+            processSize = programNum;
+        
+            // If there are no more processes, exit
+            if(processSize <= 0) break;
+        
+            // If the exited process was the current one, start the next
+            if(was_current){
+                idx = idx % processSize;  
+                kill(processIDs[idx], SIGCONT);
+            }
         }
     }
 }
@@ -122,7 +169,19 @@ void roundRobinScheduler(int argc, char *argv[]){
     char *programs[MaxProcesses];
     int processes = populateArr(programs, argc, argv);
     executeRoundRobin(programs, processes, argv);
+    
+    for(int i = 0; i < processes; i++){
+        if (programs[i] != NULL){
+            free(programs[i]);
+        }
+    }
 
+}
+
+void freeArgs(char **args) {
+    for (int i = 0; args[i] != NULL; i++) {
+        free(args[i]);
+    }
 }
 
 /* The validateCmdLine function parses the command line arguments and assesses whether
@@ -146,7 +205,7 @@ void validateCmdLine(int argc, char *argv[]){
         }
         // Looking for new program to parse.
         if(*argv[i] == ':'){
-            printf("Past arguments: %d\n", argumentCount);
+            //printf("Past arguments: %d\n", argumentCount);
             argumentCount = 0;
         }      
         // New program is found.
@@ -157,11 +216,11 @@ void validateCmdLine(int argc, char *argv[]){
         else{
             argumentCount += 1;
             if(argumentCount > MAX_ARGUMENTS){
-                printf("Argument count for program (%s) is greater than %d\n", argv[i - argumentCount], MAX_ARGUMENTS);
+               // printf("Argument count for program (%s) is greater than %d\n", argv[i - argumentCount], MAX_ARGUMENTS);
                 exit(1);
             }
         }
     }
-    printf("Past arguments: %d\n", argumentCount);
-    printf("Command line arguments are valid. Found %d programs, all within limits.\n", programCount);
+   // printf("Past arguments: %d\n", argumentCount);
+    //printf("Command line arguments are valid. Found %d programs, all within limits.\n", programCount);
 }
