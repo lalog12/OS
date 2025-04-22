@@ -82,7 +82,7 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
     int delay_in_s = 0;
     pid_t pid = 0;
 
-    const int shortestJobFirst = 0;  // Change from 0 to 1 to enable Shortest Job First
+    const int shortestJobFirst = 0;  // Enable Shortest Job First
 
     linkedList *inactiveList = createLinkedList();
     linkedList *activeList = createLinkedList();
@@ -114,6 +114,7 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
     pid_t currentRunningPID = -1; // Keep track of which process is currently running
 
     time_t start = time(NULL);
+    printf("Starting scheduler at time %ld\n", start);
     // run while activeList or inactiveList has nodes
     while(inactiveList -> head != NULL ||  activeList -> head != NULL){  
         // Move processes from inactive to active based on their delay
@@ -129,20 +130,16 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
             printf("Moving program %d from inactive list to active at time %ld\n", 
                    inactiveList->head->PID, current_time);
             
-            // Check if we have an active process and need to preempt based on SJF
-            if (shortestJobFirst && activeList->head != NULL && currentRunningPID != -1) {
-                // Calculate remaining time for current process
-                int currentRemaining = activeList->head->burstTime - activeList->head->timeRan;
-                // Calculate new process burst time
-                int newBurstTime = inactiveList->head->burstTime;
-                
-                printf("Current process %d has %d time remaining, new process %d has burst time %d\n",
-                       currentRunningPID, currentRemaining, inactiveList->head->PID, newBurstTime);
-                
-                if (newBurstTime < currentRemaining) {
-                    // New job is shorter, preempt current job
-                    printf("Preempting current process %d for shorter job %d\n", 
-                           currentRunningPID, inactiveList->head->PID);
+            // Debug active list before preemption decisions
+            printActiveList(activeList, currentRunningPID);
+            
+            // Check if we have an active process and need to preempt based on SJF or priority
+            if (activeList->head != NULL && currentRunningPID != -1) {
+                // Check for preemption based on priority first
+                if (inactiveList->head->priority > activeList->head->priority) {
+                    printf("Preempting current process %d due to higher priority process %d (%d > %d)\n", 
+                           currentRunningPID, inactiveList->head->PID,
+                           inactiveList->head->priority, activeList->head->priority);
                     
                     // Pause current process
                     kill(currentRunningPID, SIGTSTP);
@@ -153,19 +150,66 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
                     insertLinkedList(poppedNode->burstTime, poppedNode->priority, 
                                     poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
                     
-                    // Start the new shorter job
+                    // Start the new higher priority process - PID is at active list head after insertion
                     currentRunningPID = activeList->head->PID;
                     kill(currentRunningPID, SIGCONT);
                     activeList->head->timeStarted = time(NULL);
                     
+                    // Debug active list after preemption
+                    printf("After priority preemption: ");
+                    printActiveList(activeList, currentRunningPID);
+                    
                     free(poppedNode);
-                } else {
-                    // Current job is shorter or same, just add new job to active list
-                    poppedNode = popQueue(inactiveList);
-                    insertLinkedList(poppedNode->burstTime, poppedNode->priority, 
-                                    poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
-                    free(poppedNode);
+                    continue;
                 }
+                
+                // Only check for SJF preemption if shortestJobFirst is enabled
+                else if (shortestJobFirst) {
+                    // Calculate remaining time for current process
+                    int currentRemaining = activeList->head->burstTime - activeList->head->timeRan;
+                    // Calculate new process burst time
+                    int newBurstTime = inactiveList->head->burstTime;
+                    
+                    printf("Current process %d has %d time remaining, new process %d has burst time %d\n",
+                           currentRunningPID, currentRemaining, inactiveList->head->PID, newBurstTime);
+                    
+                    if (newBurstTime < currentRemaining) {
+                        // New job is shorter, preempt current job
+                        printf("Preempting current process %d for shorter job %d\n", 
+                               currentRunningPID, inactiveList->head->PID);
+                        
+                        // Pause current process
+                        kill(currentRunningPID, SIGTSTP);
+                        activeList->head->timeRan += time(NULL) - activeList->head->timeStarted;
+                        
+                        // Move new process to active list
+                        poppedNode = popQueue(inactiveList);
+                        insertLinkedList(poppedNode->burstTime, poppedNode->priority, 
+                                        poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
+                        
+                        // Start the new shorter job - PID is at active list head after insertion
+                        currentRunningPID = activeList->head->PID;
+                        kill(currentRunningPID, SIGCONT);
+                        activeList->head->timeStarted = time(NULL);
+                        
+                        // Debug active list after preemption
+                        printf("After SJF preemption: ");
+                        printActiveList(activeList, currentRunningPID);
+                        
+                        free(poppedNode);
+                        continue;
+                    }
+                }
+                
+                // No preemption needed, just add job to active list
+                poppedNode = popQueue(inactiveList);
+                insertLinkedList(poppedNode->burstTime, poppedNode->priority, 
+                                poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
+                
+                // Debug active list after insertion (no preemption)
+                printf("After insertion (no preemption): ");
+                printActiveList(activeList, currentRunningPID);
+                free(poppedNode);
             } else {
                 // Move process to active list without preemption
                 poppedNode = popQueue(inactiveList);
@@ -173,19 +217,39 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
                                 poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
                 
                 // If no process is running yet, start this one
-                if (currentRunningPID == -1 && activeList->head->PID == poppedNode->PID) {
-                    printf("Starting first process %d\n", poppedNode->PID);
-                    currentRunningPID = poppedNode->PID;
+                if (currentRunningPID == -1) {
+                    printf("Starting first process %d\n", activeList->head->PID);
+                    currentRunningPID = activeList->head->PID;
                     kill(currentRunningPID, SIGCONT);
                     activeList->head->timeStarted = time(NULL);
                 }
                 
+                // Debug active list after insertion (first process)
+                printf("After first insertion: ");
+                printActiveList(activeList, currentRunningPID);
                 free(poppedNode);
             }
         }
 
         // Check active processes for completion
         if (activeList->head != NULL && currentRunningPID != -1) {
+            // Verify that the running PID matches the head of the active list
+            if (currentRunningPID != activeList->head->PID) {
+                printf("ERROR: Running PID %d does not match active list head PID %d! Fixing...\n", 
+                       currentRunningPID, activeList->head->PID);
+                
+                // Pause current process if it's still running
+                kill(currentRunningPID, SIGTSTP);
+                
+                // Start the process at the head of the active list
+                currentRunningPID = activeList->head->PID;
+                kill(currentRunningPID, SIGCONT);
+                activeList->head->timeStarted = time(NULL);
+                
+                printf("Fixed process state. Now running PID %d\n", currentRunningPID);
+                printActiveList(activeList, currentRunningPID);
+            }
+            
             // Update running time for the active process - calculate time since last check
             time_t currentTime = time(NULL);
             time_t elapsedTime = currentTime - activeList->head->timeStarted;
@@ -224,6 +288,10 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
                     currentRunningPID = activeList->head->PID;
                     kill(currentRunningPID, SIGCONT);
                     activeList->head->timeStarted = time(NULL);
+                    
+                    // Debug active list after process completion
+                    printf("After process completion: ");
+                    printActiveList(activeList, currentRunningPID);
                 }
             }
         }
@@ -234,6 +302,10 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
             currentRunningPID = activeList->head->PID;
             kill(currentRunningPID, SIGCONT);
             activeList->head->timeStarted = time(NULL);
+            
+            // Debug active list after starting a new process
+            printf("After starting new process: ");
+            printActiveList(activeList, currentRunningPID);
         }
         
         // short sleep to prevent busy-waiting 
@@ -352,5 +424,26 @@ void validateCmdLine(int argc, char *argv[]){
     }
    // printf("Past arguments: %d\n", argumentCount);
     //printf("Command line arguments are valid. Found %d programs, all within limits.\n", programCount);
+}
+
+// Add this function to debug active list state
+void printActiveList(linkedList *list, pid_t currentRunningPID) {
+    if (list->head == NULL) {
+        printf("Active list is empty\n");
+        return;
+    }
+    
+    Node *cur = list->head;
+    printf("Active list status (currentRunningPID = %d):\n", currentRunningPID);
+    int i = 0;
+    
+    while (cur != NULL) {
+        printf("  [%d] PID: %d, Priority: %d, Burst: %d, Remaining: %ld%s\n", 
+               i++, cur->PID, cur->priority, cur->burstTime, 
+               cur->burstTime - cur->timeRan,
+               (cur->PID == currentRunningPID) ? " (RUNNING)" : "");
+        cur = cur->next;
+    }
+    printf("\n");
 }
 

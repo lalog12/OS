@@ -19,5 +19,6 @@ void removePID(int programNum, pid_t * PIDArr, pid_t rm);
 void timer_handler(int signum);
 void freeArgs(char **args);
 void fill_var(int * burstTime, int * priority, int * delay_in_s, int * pid, char * cmdline, linkedList *list);
+void printActiveList(linkedList *list, pid_t currentRunningPID);
 
 #endif
