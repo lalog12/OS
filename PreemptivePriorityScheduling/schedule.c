@@ -82,13 +82,13 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
     int delay_in_s = 0;
     pid_t pid = 0;
 
-
+    const int shortestJobFirst = 1;  // Change from 0 to 1 to enable Shortest Job First
 
     linkedList *inactiveList = createLinkedList();
     linkedList *activeList = createLinkedList();
-
+    
+    // Create all child processes, but keep them paused initially
     for(int i = 0; i < programNum; i++){
-
         char * cmdLine = programs[i];
 
         if ((pid = fork()) < 0){
@@ -98,96 +98,150 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
         else if (pid == 0){ // child control flow
             signal(SIGCONT, cont_handler);  
             parseArgs(cmdLine, programArgs);
-            pause();
+            pause(); // Wait until parent signals to continue
             execv(programArgs[0], programArgs);
             freeArgs(programArgs);
             exit(1);
         }
         else{ // parent control flow
             fill_var(&burstTime, &priority, &delay_in_s, &pid, cmdLine, inactiveList);
-            insertLinkedList(burstTime, priority, delay_in_s, pid, inactiveList, 0);  //inserting all processes into inactive linked list
+            // Use 0 for shortestJobFirst parameter when inserting to inactive list - always use delay ordering first
+            insertLinkedList(burstTime, priority, delay_in_s, pid, inactiveList, 0, 0);  //inserting all processes into inactive linked list
         }
     }
 
-
     Node *poppedNode = NULL;
+    pid_t currentRunningPID = -1; // Keep track of which process is currently running
 
     time_t start = time(NULL);
     // run while activeList or inactiveList has nodes
     while(inactiveList -> head != NULL ||  activeList -> head != NULL){  
-        // printf("Inside while loop that runs when activeList || inactiveList\n");
-        // move all programs from inactive list into activeList that are scheduled to start at elapsedSeconds.
-        while(inactiveList->head != NULL &&
-        inactiveList -> head -> delay_in_s <= (time(NULL) - start)){ 
-            printf("Moving programs from inactive list to active at time %ld\n", time(NULL)-start);
-            // move process to active linked list with preemption
-            if ( (inactiveList->head != NULL && activeList->head != NULL) &&
-                (inactiveList -> head -> priority) > (activeList -> head -> priority) ){   
-                printf("Moving process to active List with preemption\n");
-                // Pause current process
-                kill(activeList -> head -> PID, SIGTSTP);
-                activeList -> head -> timeRan += time(NULL) - activeList -> head -> timeStarted;
-
+        // Move processes from inactive to active based on their delay
+        time_t current_time = time(NULL) - start;
+        
+        if (inactiveList->head != NULL) {
+            printf("Current time: %ld, next process delay: %d\n", 
+                   current_time, inactiveList->head->delay_in_s);
+        }
+        
+        // Process the inactive list
+        while(inactiveList->head != NULL && inactiveList->head->delay_in_s <= current_time){ 
+            printf("Moving program %d from inactive list to active at time %ld\n", 
+                   inactiveList->head->PID, current_time);
+            
+            // Check if we have an active process and need to preempt based on SJF
+            if (shortestJobFirst && activeList->head != NULL && currentRunningPID != -1) {
+                // Calculate remaining time for current process
+                int currentRemaining = activeList->head->burstTime - activeList->head->timeRan;
+                // Calculate new process burst time
+                int newBurstTime = inactiveList->head->burstTime;
+                
+                printf("Current process %d has %d time remaining, new process %d has burst time %d\n",
+                       currentRunningPID, currentRemaining, inactiveList->head->PID, newBurstTime);
+                
+                if (newBurstTime < currentRemaining) {
+                    // New job is shorter, preempt current job
+                    printf("Preempting current process %d for shorter job %d\n", 
+                           currentRunningPID, inactiveList->head->PID);
+                    
+                    // Pause current process
+                    kill(currentRunningPID, SIGTSTP);
+                    activeList->head->timeRan += time(NULL) - activeList->head->timeStarted;
+                    
+                    // Move new process to active list
+                    poppedNode = popQueue(inactiveList);
+                    insertLinkedList(poppedNode->burstTime, poppedNode->priority, 
+                                    poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
+                    
+                    // Start the new shorter job
+                    currentRunningPID = activeList->head->PID;
+                    kill(currentRunningPID, SIGCONT);
+                    activeList->head->timeStarted = time(NULL);
+                    
+                    free(poppedNode);
+                } else {
+                    // Current job is shorter or same, just add new job to active list
+                    poppedNode = popQueue(inactiveList);
+                    insertLinkedList(poppedNode->burstTime, poppedNode->priority, 
+                                    poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
+                    free(poppedNode);
+                }
+            } else {
+                // Move process to active list without preemption
                 poppedNode = popQueue(inactiveList);
-                insertLinkedList(poppedNode ->burstTime, poppedNode -> priority, poppedNode ->delay_in_s, poppedNode ->PID, activeList, 1);
-
-                kill(activeList -> head -> PID, SIGCONT);
-                activeList -> head -> timeStarted = time(NULL);
+                insertLinkedList(poppedNode->burstTime, poppedNode->priority, 
+                                poppedNode->delay_in_s, poppedNode->PID, activeList, 1, shortestJobFirst);
+                
+                // If no process is running yet, start this one
+                if (currentRunningPID == -1 && activeList->head->PID == poppedNode->PID) {
+                    printf("Starting first process %d\n", poppedNode->PID);
+                    currentRunningPID = poppedNode->PID;
+                    kill(currentRunningPID, SIGCONT);
+                    activeList->head->timeStarted = time(NULL);
+                }
                 
                 free(poppedNode);
-            }   
-
-            else{   // move process to active linked list with no preemption.
-                printf("Move process to active list with no preemption\n");
-                poppedNode = popQueue(inactiveList);
-                insertLinkedList(poppedNode -> burstTime, poppedNode -> priority, poppedNode -> delay_in_s, poppedNode -> PID, activeList, 1);
-
-                // moved process is only process in activeList
-                if(activeList -> head -> PID == poppedNode -> PID){
-                    printf("Current process is only process in active list\n");
-                    kill(activeList -> head -> PID, SIGCONT);
-                    activeList -> head -> timeStarted = time(NULL);
-                }
-                printf("Freeing node that was in inactive list\n");
-                free(poppedNode);
-            }    
-        }
-
-        if (activeList -> head != NULL){
-            // printf("While loop for when the activeList head != NULL\n");
-            // Program being ran completed successfully.
-            activeList -> head -> timeRan +=  (time(NULL) - activeList -> head -> timeStarted);
-            activeList -> head -> timeStarted = time(NULL);
-            
-
-
-
-            if( (activeList -> head -> timeRan >= activeList -> head ->burstTime) && (WIFEXITED(status)) ){ 
-                printf("Inside while loop for when timeRan exceeds burstTime and WIFEXITED(status) returns True\n");
-                int waitResult = waitpid(activeList -> head -> PID, &status, WNOHANG | WUNTRACED);
-                if (waitResult > 0 && WIFEXITED(status)){
-                    printf("process %d completed successfully\n", activeList -> head -> PID);
-                }
-                else{
-                    printf("Inside while loop for when timeRan exceeds burstTime and WIFEXITED(status) returns True and freeing node");
-                    poppedNode = popQueue(activeList);
-                    free(poppedNode);
-
-                    // Start new program if allowed.
-                    if(activeList -> head != NULL){
-                        printf("Starting new program\n");
-                        kill(activeList -> head -> PID, SIGCONT);
-                        activeList -> head -> timeStarted = time(NULL);
-                    }
-                }
-
             }
         }
 
-
+        // Check active processes for completion
+        if (activeList->head != NULL && currentRunningPID != -1) {
+            // Update running time for the active process - calculate time since last check
+            time_t currentTime = time(NULL);
+            time_t elapsedTime = currentTime - activeList->head->timeStarted;
+            
+            // Only update the tracking if time has actually passed
+            if (elapsedTime > 0) {
+                // Update total time ran
+                activeList->head->timeRan += elapsedTime;
+                
+                // Update the start time to the current time for the next calculation
+                activeList->head->timeStarted = currentTime;
+            }
+            
+            // Check if the process has completed naturally
+            int waitResult = waitpid(currentRunningPID, &status, WNOHANG);
+            if (waitResult > 0) {
+                // Process has terminated
+                if (WIFEXITED(status)) {
+                    printf("Process %d completed after running for %ld of %d seconds\n", 
+                           currentRunningPID, activeList->head->timeRan, activeList->head->burstTime);
+                } else {
+                    printf("Process %d terminated abnormally after running for %ld seconds\n", 
+                           currentRunningPID, activeList->head->timeRan);
+                }
+                
+                // Remove from active list
+                poppedNode = popQueue(activeList);
+                free(poppedNode);
+                
+                // Reset current running PID
+                currentRunningPID = -1;
+                
+                // Start next process if available
+                if (activeList->head != NULL) {
+                    printf("Starting next process %d\n", activeList->head->PID);
+                    currentRunningPID = activeList->head->PID;
+                    kill(currentRunningPID, SIGCONT);
+                    activeList->head->timeStarted = time(NULL);
+                }
+            }
+        }
+        
+        // If we have processes in the active list but none running, start the first one
+        if (activeList->head != NULL && currentRunningPID == -1) {
+            printf("Starting process %d from active list\n", activeList->head->PID);
+            currentRunningPID = activeList->head->PID;
+            kill(currentRunningPID, SIGCONT);
+            activeList->head->timeStarted = time(NULL);
+        }
+        
+        // short sleep to prevent busy-waiting 
+        // can quickly detect process completion
+        usleep(5000); 
     }
 
-    printf("End of while loop\n");
+    printf("End of while loop - all processes completed\n");
 }
 // void fillLinkedList(char *programs[], linkedList * list, int programNum, int priorityFlag){
 //     for(int i = 0; i < programNum; i++){

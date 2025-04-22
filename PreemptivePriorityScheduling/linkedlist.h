@@ -24,7 +24,7 @@ typedef struct linkedList
 }linkedList;
 
 Node *popQueue(linkedList *list);
-void insertLinkedList(int burstTime, int priority, int delay_in_s, int pid, linkedList * list, int priorityFlag);
+void insertLinkedList(int burstTime, int priority, int delay_in_s, int pid, linkedList * list, int priorityFlag, int shortestJobFirst);
 linkedList *createLinkedList();
 
 #endif   //endif
