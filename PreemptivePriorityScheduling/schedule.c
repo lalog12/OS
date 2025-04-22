@@ -13,10 +13,8 @@
 #include "linkedlist.h"
 
 
-pid_t processIDs[MAX_PROCESSES]; // pid array
-int processSize;
-int idx;
-pid_t currentProcess;
+volatile int elapsedSeconds = 0;
+
 
 int main(int argc, char * argv[]){
     validateCmdLine(argc, argv);
@@ -64,14 +62,7 @@ int populateArr(char * arr[], int argc, char * argv[]){
 }
 
 void timer_handler(int signum){
-    
-    if(processSize <= 0) return;
-    kill(processIDs[idx], SIGSTOP);
-    
-    idx = (idx + 1) % processSize;
-
-    kill(processIDs[idx], SIGCONT);
-
+    elapsedSeconds++;
 }
 
 void cont_handler(int signum){
@@ -80,25 +71,18 @@ void cont_handler(int signum){
 
 void executeRoundRobin(char *programs[], int programNum, char * argv[]){
     signal(SIGALRM, timer_handler);
-    idx = 0;
+
     int ms = strtol(argv[1], NULL, 10); // quantum
     char * programArgs[MAX_ARGUMENTS + 2] = {NULL};  // +2 for executable and NULL
     // wait
     int status;
-
 
     int burstTime = 0;
     int priority = 0;
     int delay_in_s = 0;
     pid_t pid = 0;
 
-    struct itimerval timer;
-    timer.it_value.tv_sec = 0;
-    timer.it_value.tv_usec = 1000 * ms;
-    timer.it_interval.tv_sec = 0;
-    timer.it_interval.tv_usec = 1000 * ms;
 
-    processSize = programNum;
 
     linkedList *inactiveList = createLinkedList();
     linkedList *activeList = createLinkedList();
@@ -125,38 +109,86 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
         }
     }
 
-    Node *CurrentNode = popQueue(inactiveList);
 
-    setitimer(ITIMER_REAL, &timer, NULL);
+    Node *poppedNode = NULL;
 
-    kill(CurrentNode -> PID, SIGCONT);
-    time_t start_time = time(NULL);  // start timer
-    insertLinkedList(CurrentNode -> burstTime, CurrentNode -> priority, CurrentNode -> delay_in_s, CurrentNode -> PID, activeList, 1);
+    time_t start = time(NULL);
+    // run while activeList or inactiveList has nodes
+    while(inactiveList -> head != NULL ||  activeList -> head != NULL){  
+        // printf("Inside while loop that runs when activeList || inactiveList\n");
+        // move all programs from inactive list into activeList that are scheduled to start at elapsedSeconds.
+        while(inactiveList->head != NULL &&
+        inactiveList -> head -> delay_in_s <= (time(NULL) - start)){ 
+            printf("Moving programs from inactive list to active at time %ld\n", time(NULL)-start);
+            // move process to active linked list with preemption
+            if ( (inactiveList->head != NULL && activeList->head != NULL) &&
+                (inactiveList -> head -> priority) > (activeList -> head -> priority) ){   
+                printf("Moving process to active List with preemption\n");
+                // Pause current process
+                kill(activeList -> head -> PID, SIGTSTP);
+                activeList -> head -> timeRan += time(NULL) - activeList -> head -> timeStarted;
 
-    while (inactiveList -> head != NULL ||  activeList -> head != NULL){
-        pid_t pid = waitpid(-1, &status, WUNTRACED | WNOHANG);
-        
-        if(WIFEXITED(status) && pid > 0){
-            // Check if this was the current process BEFORE removing it
-            int was_current = (pid == processIDs[idx]);
+                poppedNode = popQueue(inactiveList);
+                insertLinkedList(poppedNode ->burstTime, poppedNode -> priority, poppedNode ->delay_in_s, poppedNode ->PID, activeList, 1);
+
+                kill(activeList -> head -> PID, SIGCONT);
+                activeList -> head -> timeStarted = time(NULL);
+                
+                free(poppedNode);
+            }   
+
+            else{   // move process to active linked list with no preemption.
+                printf("Move process to active list with no preemption\n");
+                poppedNode = popQueue(inactiveList);
+                insertLinkedList(poppedNode -> burstTime, poppedNode -> priority, poppedNode -> delay_in_s, poppedNode -> PID, activeList, 1);
+
+                // moved process is only process in activeList
+                if(activeList -> head -> PID == poppedNode -> PID){
+                    printf("Current process is only process in active list\n");
+                    kill(activeList -> head -> PID, SIGCONT);
+                    activeList -> head -> timeStarted = time(NULL);
+                }
+                printf("Freeing node that was in inactive list\n");
+                free(poppedNode);
+            }    
+        }
+
+        if (activeList -> head != NULL){
+            // printf("While loop for when the activeList head != NULL\n");
+            // Program being ran completed successfully.
+            activeList -> head -> timeRan +=  (time(NULL) - activeList -> head -> timeStarted);
+            activeList -> head -> timeStarted = time(NULL);
             
-            removePID(programNum, processIDs, pid);
-            // printf("Waited for child: %d\n", pid);
-            programNum--;
-            processSize = programNum;
-        
-            // If there are no more processes, exit
-            if(processSize <= 0) break;
-        
-            // If the exited process was the current one, start the next
-            if(was_current){
-                idx = idx % processSize;  
-                kill(processIDs[idx], SIGCONT);
+
+
+
+            if( (activeList -> head -> timeRan >= activeList -> head ->burstTime) && (WIFEXITED(status)) ){ 
+                printf("Inside while loop for when timeRan exceeds burstTime and WIFEXITED(status) returns True\n");
+                int waitResult = waitpid(activeList -> head -> PID, &status, WNOHANG | WUNTRACED);
+                if (waitResult > 0 && WIFEXITED(status)){
+                    printf("process %d completed successfully\n", activeList -> head -> PID);
+                }
+                else{
+                    printf("Inside while loop for when timeRan exceeds burstTime and WIFEXITED(status) returns True and freeing node");
+                    poppedNode = popQueue(activeList);
+                    free(poppedNode);
+
+                    // Start new program if allowed.
+                    if(activeList -> head != NULL){
+                        printf("Starting new program\n");
+                        kill(activeList -> head -> PID, SIGCONT);
+                        activeList -> head -> timeStarted = time(NULL);
+                    }
+                }
+
             }
         }
-    }
-}
 
+
+    }
+
+    printf("End of while loop\n");
+}
 // void fillLinkedList(char *programs[], linkedList * list, int programNum, int priorityFlag){
 //     for(int i = 0; i < programNum; i++){
 //         char *currentProgram = programs[i];
@@ -168,6 +200,8 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
 //     }
 
 // }
+
+
 
 void roundRobinScheduler(int argc, char *argv[]){
     char *programs[MaxProcesses];

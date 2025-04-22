@@ -12,6 +12,9 @@ typedef struct Node
     int delay_in_s;
     pid_t PID;
     struct Node * next;
+    time_t timeRan;
+    time_t timeStarted;
+    time_t timeEnded;
 }Node;
 
 

@@ -36,15 +36,17 @@ void insertLinkedList(int burstTime, int priority, int delay_in_s, int pid, link
     new_node-> PID = pid;
     new_node -> next = NULL;
 
-
+    printf("Inserting node, PID: %d, priority: %d, delay_in_s: %d, burstTime: %d, priorityFlag: %d\n",
+    new_node -> PID, new_node-> priority, new_node -> delay_in_s, new_node -> burstTime, priorityFlag);
+    
     if (list->head == NULL){    // insert into empty list
+        
         list->head = new_node;
         new_node->next = NULL;
         return;
     }
 
     if (priorityFlag == 1){     // priority ordering
-        printf("ordering with priority\n");
         if (new_node -> priority > list -> head -> priority){  // inserting at the head
             new_node -> next = list -> head;
             list -> head = new_node;
@@ -72,8 +74,6 @@ void insertLinkedList(int burstTime, int priority, int delay_in_s, int pid, link
     }
 
     else if (priorityFlag == 0){    // time_in_s ordering
-        printf("Ordering with delay_in_s\n");
-
         if (new_node -> delay_in_s < list -> head -> delay_in_s){  // inserting at the head
             new_node -> next = list -> head;
             list -> head = new_node;

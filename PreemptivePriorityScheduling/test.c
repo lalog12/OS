@@ -9,14 +9,15 @@ int main(int argc, char *argv[]) {
     int delayInS = atoi(argv[3]);
     
     // Ensure runtime is at least 10 seconds
-    int runTime = (burstTime < 10) ? 10 : burstTime;
+
+    int runTime = burstTime;
     
-    // Print info and run for at least 10 seconds
+    // Print info and run for burstTime
     for (int i = 0; i < runTime; i++) {
         printf("Program %s: Priority %d, Burst time: %d, Time remaining: %d seconds, Delay: %d seconds\n", 
                argv[0], priority, burstTime, runTime - i, delayInS);
         sleep(1);
     }
-    
+
     return 0;
 }
