@@ -82,7 +82,7 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
     int delay_in_s = 0;
     pid_t pid = 0;
 
-    const int shortestJobFirst = 1;  // Change from 0 to 1 to enable Shortest Job First
+    const int shortestJobFirst = 0;  // Change from 0 to 1 to enable Shortest Job First
 
     linkedList *inactiveList = createLinkedList();
     linkedList *activeList = createLinkedList();
@@ -243,18 +243,6 @@ void executeRoundRobin(char *programs[], int programNum, char * argv[]){
 
     printf("End of while loop - all processes completed\n");
 }
-// void fillLinkedList(char *programs[], linkedList * list, int programNum, int priorityFlag){
-//     for(int i = 0; i < programNum; i++){
-//         char *currentProgram = programs[i];
-//         strtok(currentProgram, " ");
-//         int burstTime = (int)strtol(strtok(currentProgram, " "), NULL, 10);
-//         int priority = (int)strtol(strtok(currentProgram, " "), NULL, 10);
-//         int delay_in_s = (int)strtol(strtok(currentProgram, " "), NULL, 10);
-//         insertLinkedList(burstTime, priority, delay_in_s, list, 0);      // order by delay_in_s       
-//     }
-
-// }
-
 
 
 void roundRobinScheduler(int argc, char *argv[]){
@@ -360,6 +348,7 @@ void validateCmdLine(int argc, char *argv[]){
                 exit(1);
             }
         }
+
     }
    // printf("Past arguments: %d\n", argumentCount);
     //printf("Command line arguments are valid. Found %d programs, all within limits.\n", programCount);
