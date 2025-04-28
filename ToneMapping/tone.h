@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #pragma pack(push, 1)
+
 struct BMPFileHeader {
     char signature[3];
     uint32_t fileSize;
@@ -26,6 +27,22 @@ struct BMPInfoHeader{
     uint32_t colorsImportant;
 };
 
+struct RGB
+{
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+};
+
+struct RGBf {
+    float r;
+    float g;
+    float b;
+};
+
+#pragma pack(pop)
+RGBf toneMapReinhard(RGBf color, float avgLum, float a);
+void processChunk(int startIdx, int endIdx, const std::vector<RGBf>& input, std::vector<RGB>& output, float avgLum, float exposureKey);
 void argCheck(int argc, char *argv[]);
 void toneMap(int argc, char *argv[]);
 
