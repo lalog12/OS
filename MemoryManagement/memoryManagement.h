@@ -20,6 +20,18 @@ const int TLB_SIZE = 5;      // 5 entry TLB
 const int MIN_PROCESS_MEM = 8192;  // 8KB minimum for process
 const int MIN_REQUEST_MEM = 4096;  // 4KB minimum for memory request
 
+// Command structure for process threads
+struct ProcessCommand {
+    enum Type {
+        REQUEST_MEM,
+        ACCESS_MEM,
+        END_PROCESS
+    };
+    
+    Type type;
+    int arg;  // Either mem_requested or address depending on type
+};
+
 // TLB Entry structure
 struct TLBEntry {
     int pageNumber;
@@ -42,6 +54,11 @@ public:
     std::vector<PageTableEntry> pageTable;
     int memorySize;
     std::atomic<bool> running;
+    
+    // Command queue for this process
+    std::queue<ProcessCommand> commandQueue;
+    std::mutex commandMutex;
+    std::condition_variable commandCV;
 
     Process() : pid(0), memorySize(0), running(true) {}
     Process(int p, int mem) : pid(p), memorySize(mem), running(true) {}
@@ -98,6 +115,7 @@ private:
     
     // Helper functions
     int findFreeFrame();
+    int replaceOldestFrame();
     void updateTLB(int pageNumber, int frameNumber);
     void handlePageFault(Process& process, int pageNumber);
     void saveToBackingStore(int frameNumber, const std::string& filename);
