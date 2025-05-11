@@ -87,6 +87,7 @@ private:
     
     // Thread management
     std::mutex threadMutex;
+    std::mutex consoleMutex;  // Mutex for console output
     std::condition_variable cv;
     std::atomic<bool> stopThreads;
     std::unordered_map<int, std::thread> processThreads;

@@ -60,6 +60,8 @@ void MemoryManager::processThreadFunction(int pid) {
             // request_mem (20%)
             int mem = MIN_REQUEST_MEM + (gen() % 4) * PAGE_SIZE;
             request_mem(pid, mem);
+            // Synchronized console output
+            std::lock_guard<std::mutex> lock(consoleMutex);
             std::cout << "Process " << pid << " requested " << mem << " bytes of memory\n";
         }
         else if (action < 80) {
@@ -67,12 +69,18 @@ void MemoryManager::processThreadFunction(int pid) {
             if (processes[pid].memorySize > 0) {
                 int addr = gen() % processes[pid].memorySize;
                 int value = access_mem(pid, addr);
+                // Synchronized console output
+                std::lock_guard<std::mutex> lock(consoleMutex);
                 std::cout << "Process " << pid << " accessed address " << addr << ", value: " << value << "\n";
             }
         }
         else if (action < 90) {
             // end_process (10%)
-            std::cout << "Process " << pid << " ending itself\n";
+            {
+                // Synchronized console output
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cout << "Process " << pid << " ending itself\n";
+            }
             end_process(pid);
             break; // Exit the thread
         }
@@ -81,7 +89,11 @@ void MemoryManager::processThreadFunction(int pid) {
             int mem = MIN_PROCESS_MEM + (gen() % 4) * PAGE_SIZE;
             int newPid = init_mem(mem);
             if (newPid >= 0) {
-                std::cout << "Process " << pid << " started new process " << newPid << " with " << mem << " bytes\n";
+                {
+                    // Synchronized console output
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cout << "Process " << pid << " started new process " << newPid << " with " << mem << " bytes\n";
+                }
                 createProcessThread(newPid);
             }
         }
@@ -291,6 +303,7 @@ void MemoryManager::start_new_process(int mem_requested) {
 }
 
 void MemoryManager::listProcesses() {
+    std::lock_guard<std::mutex> lock(consoleMutex);
     std::cout << "\nActive Processes:\n";
     for (const auto& process : processes) {
         if (process.running) {
@@ -302,10 +315,41 @@ void MemoryManager::listProcesses() {
 }
 
 void MemoryManager::printMemory() {
+    std::lock_guard<std::mutex> lock(consoleMutex);
     std::cout << "\nPhysical Memory Status:\n";
     for (int i = 0; i < NUM_FRAMES; i++) {
         std::cout << "Frame " << i << ": " 
-                  << (frameAllocation[i] ? "Allocated" : "Free") << "\n";
+                  << (frameAllocation[i] ? "Allocated" : "Free");
+        
+        // Show process association if frame is allocated
+        if (frameAllocation[i]) {
+            bool foundAssociation = false;
+            for (size_t pid = 0; pid < processes.size(); pid++) {
+                if (processes[pid].running) {
+                    for (size_t pageNum = 0; pageNum < processes[pid].pageTable.size(); pageNum++) {
+                        // std::cout << "valid" << ": " << processes[pid].pageTable[pageNum].valid << std::endl;
+                        // std::cout << "inMemory" << ": " << processes[pid].pageTable[pageNum].inMemory << std::endl;
+                        // std::cout << "frameNumber" << ": " << processes[pid].pageTable[pageNum].frameNumber << std::endl;
+                        // std::cout << "i" << ": " << i << std::endl;
+                        if (processes[pid].pageTable[pageNum].valid && 
+                            processes[pid].pageTable[pageNum].inMemory &&
+                            processes[pid].pageTable[pageNum].frameNumber == i) {
+                            std::cout << " (Process: " << pid << ", Page: " << pageNum << ")";
+                            foundAssociation = true;
+                            break;
+                        }
+                    }
+                    if (foundAssociation) {
+                        break;
+                    }
+                }
+            }
+            if (!foundAssociation) {
+                std::cout << " (Not in page table)" << std::endl;
+            }
+        }
+        
+        std::cout << "\n";
     }
     
     std::cout << "\nTLB Status:\n";
@@ -315,9 +359,36 @@ void MemoryManager::printMemory() {
                       << " -> Frame " << tlb[i].frameNumber << "\n";
         }
     }
+    
+    // Print backing store files and their associations
+    std::cout << "\nBacking Store Files:\n";
+    bool hasFiles = false;
+    
+    for (size_t pid = 0; pid < processes.size(); pid++) {
+        if (processes[pid].running) {
+            bool processHasFiles = false;
+            
+            for (size_t pageNum = 0; pageNum < processes[pid].pageTable.size(); pageNum++) {
+                if (!processes[pid].pageTable[pageNum].backingStoreFile.empty()) {
+                    if (!processHasFiles) {
+                        std::cout << "Process " << pid << ":\n";
+                        processHasFiles = true;
+                    }
+                    std::cout << "  Page " << pageNum << " -> File: " 
+                              << processes[pid].pageTable[pageNum].backingStoreFile << "\n";
+                    hasFiles = true;
+                }
+            }
+        }
+    }
+    
+    if (!hasFiles) {
+        std::cout << "No backing store files in use.\n";
+    }
 }
 
 void MemoryManager::handleCommand(const std::string& command) {
+    std::lock_guard<std::mutex> lock(consoleMutex);
     std::istringstream iss(command);
     std::string cmd;
     iss >> cmd;
@@ -400,28 +471,44 @@ void MemoryManager::startRandomProcessActivities() {
     std::random_device rd;
     std::mt19937 gen(rd());
     
+    {
+        std::lock_guard<std::mutex> lock(consoleMutex);
+        std::cout << "Creating 5 initial processes...\n";
+    }
+    
     for (int i = 0; i < 5; i++) {
         int mem = MIN_PROCESS_MEM + (gen() % 4) * PAGE_SIZE;
         int pid = init_mem(mem);
         if (pid >= 0) {
-            std::cout << "Started initial process " << pid << " with " << mem << " bytes\n";
+            // Synchronized console output
+            {
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cout << "Started initial process " << pid << " with " << mem << " bytes\n";
+            }
             createProcessThread(pid);
         }
     }
     
     // Run for exactly 10 seconds
-    std::cout << "Process threads are running. Will stop after 10 seconds...\n";
-    //printMemory();
+    {
+        std::lock_guard<std::mutex> lock(consoleMutex);
+        std::cout << "Process threads are running. Will stop after 10 seconds...\n";
+    }
+    printMemory();
+    
     
     auto startTime = std::chrono::steady_clock::now();
     while (std::chrono::duration_cast<std::chrono::seconds>(
            std::chrono::steady_clock::now() - startTime).count() < 10) {
         // Sleep for one second then print memory status
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        std::cout << "\n--- Memory status at " 
-                  << std::chrono::duration_cast<std::chrono::seconds>(
-                     std::chrono::steady_clock::now() - startTime).count()
-                  << " seconds ---\n";
+        {
+            std::lock_guard<std::mutex> lock(consoleMutex);
+            std::cout << "\n--- Memory status at " 
+                    << std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::steady_clock::now() - startTime).count()
+                    << " seconds ---\n";
+        }
         printMemory();
     }
     
@@ -430,6 +517,7 @@ void MemoryManager::startRandomProcessActivities() {
 }
 
 void MemoryManager::stopRandomProcessActivities() {
+    std::lock_guard<std::mutex> lock(consoleMutex);
     std::cout << "Stopping all processes...\n";
     stopThreads = true;
     cv.notify_all();
