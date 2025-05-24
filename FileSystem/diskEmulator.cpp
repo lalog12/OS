@@ -8,15 +8,18 @@
 FILE * disks[MAXDISKS] = {NULL};
 int diskSizeInBlocks[MAXDISKS] = {0};
 bool diskInUse[MAXDISKS] = {false};
-char DisksBlocksBytes[MAXDISKS][MAXBLOCKS][BLOCKSIZE];
+
 
 
 
 int main(int argc,char *argv[]){
 
-char file[10];
-strcpy(file, "hi.txt");
-int disk = openDisk(file, 100 * BLOCKSIZE);
+char file[10] = "hi.txt";
+char buffer[256] = "I want to write this stuff into my buffer";
+char readBuffer[256] = {0}; 
+int disk = openDisk(file, 1 * BLOCKSIZE);
+writeBlock(disk, 0, buffer);
+readBlock(disk, 0, readBuffer);
 closeDisk(disk);
 
 }
@@ -74,7 +77,6 @@ int openDisk(char *filename, int nBytes){
                 if(fseek(fp, nBytes - 1, SEEK_SET) < 0){
                     std::cout << "Error seeking to end of file." << std::endl;
                     return -10;
-                
                 }
                 if(fputc(0, fp) < 0){
                     std::cout << "Error placing NULL character at end of file." << std::endl;
@@ -117,6 +119,48 @@ int closeDisk(int disk){
     return 0;
 }
 
-// int readBlock(int disk, int bNum, void *block){
+int readBlock(int disk, int bNum, void *block){
 
-// }
+    if(diskInUse[disk] == false){
+        std::cout << "Disk is not in use." << std::endl;
+        return -13;
+    }
+    if (bNum >= diskSizeInBlocks[disk]){
+        std::cout << "bNum is greater than blocks in disk " << diskSizeInBlocks[disk] << "." << std::endl;
+        return -14;
+    }
+
+    int blockOffset = bNum * BLOCKSIZE;  // 256 bytes (BLOCKSIZE) * offset (bNum) 
+
+    if(fseek(disks[disk], blockOffset, SEEK_SET) != 0){
+        return -15;
+    }
+    if(fread(block, 1, BLOCKSIZE, disks[disk]) != BLOCKSIZE){
+        return -16;
+    };
+
+    return 0;
+}
+
+int writeBlock(int disk, int bNum, void *block){
+
+    if(diskInUse[disk] == false){
+        std::cout << "Disk is not in use." << std::endl;
+        return -13;
+    }
+    if (bNum >= diskSizeInBlocks[disk]){
+        std::cout << "bNum is greater than blocks in disk " << diskSizeInBlocks[disk] << "." << std::endl;
+        return -14;
+    }
+
+    int blockOffset = bNum * BLOCKSIZE;  // 256 bytes (BLOCKSIZE) * offset (bNum) 
+
+    if(fseek(disks[disk], blockOffset, SEEK_SET) != 0){
+        return -15;
+    }
+    if(fwrite(block, 1, BLOCKSIZE, disks[disk]) != BLOCKSIZE){
+        return -16;
+    };
+
+    return 0;
+}
