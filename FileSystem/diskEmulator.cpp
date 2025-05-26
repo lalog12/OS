@@ -12,17 +12,27 @@ bool diskInUse[MAXDISKS] = {false};
 
 
 
-int main(int argc,char *argv[]){
+// int main(int argc,char *argv[]){
 
-char file[10] = "hi.txt";
-char buffer[256] = "I want to write this stuff into my buffer";
-char readBuffer[256] = {0}; 
-int disk = openDisk(file, 1 * BLOCKSIZE);
-writeBlock(disk, 0, buffer);
-readBlock(disk, 0, readBuffer);
-closeDisk(disk);
+// char file[10] = "hi.txt";
+// char file1[10] = "h.txt";
+// char buffer[256] = "I want to write this stuff into my buffer";
+// char buffer1[256] = "HELLO";
+// char readBuffer[256] = {0}; 
+// char readBuffer1[256] = {0}; 
 
-}
+// int disk = openDisk(file, 1 * BLOCKSIZE);
+// int disk1 = openDisk(file1, 1 * BLOCKSIZE);
+// writeBlock(disk, 0, buffer);
+// writeBlock(disk1, 0, buffer1);
+// readBlock(disk, 0, readBuffer);
+// readBlock(disk1, 0, readBuffer1);
+// std::cout << readBuffer << "\n";
+// std::cout << readBuffer1 << "\n";
+// closeDisk(disk);
+// closeDisk(disk1);
+
+// }
 
 
 int openDisk(char *filename, int nBytes){
